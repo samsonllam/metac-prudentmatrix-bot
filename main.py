@@ -704,9 +704,21 @@ if __name__ == "__main__":
     publish_to_metaculus = True
     print_startup_banner(run_mode, will_publish=publish_to_metaculus)
 
-    # Configure the bot. The `llms=` block below is commented out to use
-    # whichever default models forecasting-tools picks based on your env vars;
-    # uncomment and edit to pin specific models.
+    # Configure the bot. Claude Opus 5.5 rejects `temperature` and thinking
+    # budgets, so leave temperature unset and control depth with
+    # `output_config` effort (its default is "medium"). Don't use litellm's
+    # `reasoning_effort` here: it becomes `budget_tokens`, which Opus 5.5 400s.
+    # "researcher" is left out so forecasting-tools picks one from your env
+    # vars (AskNews/Perplexity/Exa key if set, else the Metaculus proxy).
+    def claude_opus(effort: str) -> GeneralLlm:
+        return GeneralLlm(
+            model="anthropic/claude-opus-5-5",
+            output_config={"effort": effort},
+            max_tokens=32000,  # thinking counts against this
+            timeout=300,
+            allowed_tries=2,
+        )
+
     template_bot = FallTemplateBot2026(
         research_reports_per_question=1,
         predictions_per_research_report=5,
@@ -715,17 +727,11 @@ if __name__ == "__main__":
         folder_to_save_reports_to=None,
         skip_previously_forecasted_questions=True,
         extra_metadata_in_explanation=True,
-        # llms={
-        #     "default": GeneralLlm(
-        #         model="openrouter/openai/gpt-4o",
-        #         temperature=0.3,
-        #         timeout=40,
-        #         allowed_tries=2,
-        #     ),
-        #     "summarizer": "openai/gpt-4o-mini",
-        #     "researcher": "asknews/news-summaries",
-        #     "parser": "openai/gpt-4o-mini",
-        # },
+        llms={
+            "default": claude_opus("high"),
+            "summarizer": claude_opus("low"),
+            "parser": claude_opus("low"),
+        },
     )
 
     # Per-mode tournament URL shown in the summary banner footer. These
