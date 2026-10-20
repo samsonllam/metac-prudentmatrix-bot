@@ -144,9 +144,20 @@ class FallTemplateBot2026(ForecastBot):
                 or researcher == "asknews/deep-research/high-depth"
             ):
                 try:
-                    research = await AskNewsSearcher().call_preconfigured_version(
-                        researcher, prompt
-                    )
+                    if researcher == "asknews/deep-research/medium-depth":
+                        # Same settings as forecasting-tools' medium-depth preset,
+                        # minus "podcasts", which asknews 0.13.x rejects as a source.
+                        research = await AskNewsSearcher().get_formatted_deep_research(
+                            prompt,
+                            sources=["asknews", "google", "x", "wiki"],
+                            filter_params={"premium": True},
+                            search_depth=2,
+                            max_depth=4,
+                        )
+                    else:
+                        research = await AskNewsSearcher().call_preconfigured_version(
+                            researcher, prompt
+                        )
                 except Exception as e:
                     # Deep research needs AskNews chat scope and premium sources;
                     # fall back to plain news search rather than skip the question.
