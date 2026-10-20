@@ -2,6 +2,10 @@ name: Test Bot
 
 on:
   workflow_dispatch:
+    inputs:
+      question_url:
+        description: "Forecast only this question URL (leave empty for the whole bot-testing-area)"
+        default: ""
 
 # Add concurrency group to prevent parallel runs
 concurrency:
@@ -37,10 +41,11 @@ jobs:
         run: poetry install --no-interaction --no-root
       - name: Run bot
         run: |
-          poetry run python main.py --mode test_questions
+          poetry run python main.py --mode test_questions ${QUESTION_URL:+--question-url "$QUESTION_URL"}
         # this reads the environment variables from the github repository.
         # Store under Settings --> Secrets and variables --> Actions
         env:
+          QUESTION_URL: ${{ inputs.question_url }}
           METACULUS_TOKEN: ${{ secrets.METACULUS_TOKEN }} # replace this with the name of the variable under which you stored your own Metaculus token
           PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
           EXA_API_KEY: ${{ secrets.EXA_API_KEY }}

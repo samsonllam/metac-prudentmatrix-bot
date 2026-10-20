@@ -723,6 +723,12 @@ if __name__ == "__main__":
         default="tournament",
         help="What to forecast on (default: tournament)",
     )
+    parser.add_argument(
+        "--question-url",
+        type=str,
+        default=None,
+        help="Forecast only this Metaculus question (overrides --mode's question list)",
+    )
     args = parser.parse_args()
     run_mode: Literal["tournament", "metaculus_cup", "test_questions"] = args.mode
 
@@ -775,7 +781,15 @@ if __name__ == "__main__":
     # exceptions, since return_exceptions=True) which then flows into the
     # summary printers below.
     client = MetaculusClient()
-    if run_mode == "tournament":
+    if args.question_url:
+        # One question only, e.g. to smoke-test a change without paying for a
+        # whole tournament's worth of forecasts.
+        template_bot.skip_previously_forecasted_questions = False
+        question = client.get_question_by_url(args.question_url)
+        forecast_reports = asyncio.run(
+            template_bot.forecast_questions([question], return_exceptions=True)
+        )
+    elif run_mode == "tournament":
         seasonal_tournament_reports = asyncio.run(
             template_bot.forecast_on_tournament(
                 client.CURRENT_AI_COMPETITION_ID, return_exceptions=True
