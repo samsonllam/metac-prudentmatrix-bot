@@ -146,10 +146,10 @@ class FallTemplateBot2026(ForecastBot):
                 try:
                     if researcher == "asknews/deep-research/medium-depth":
                         # Same settings as forecasting-tools' medium-depth preset,
-                        # minus "podcasts", which asknews 0.13.x rejects as a source.
+                        # minus "podcasts" (asknews 0.13.x rejects it) and "x" (needs Spelunker plan).
                         research = await AskNewsSearcher().get_formatted_deep_research(
                             prompt,
-                            sources=["asknews", "google", "x", "wiki"],
+                            sources=["asknews", "google", "wiki"],
                             filter_params={"premium": True},
                             search_depth=2,
                             max_depth=4,
@@ -741,7 +741,7 @@ if __name__ == "__main__":
     # `output_config` effort (its default is "medium"). Don't use litellm's
     # `reasoning_effort` here: it becomes `budget_tokens`, which Opus 5.5 400s.
     # "researcher" uses AskNews deep research (multi-step search over AskNews,
-    # Google, X, Wiki, podcasts, synthesized by AskNews's default model) and
+    # Google, Wiki, synthesized by AskNews's default model) and
     # needs ASKNEWS_CLIENT_ID + ASKNEWS_SECRET.
     def claude_opus(effort: str) -> GeneralLlm:
         return GeneralLlm(
