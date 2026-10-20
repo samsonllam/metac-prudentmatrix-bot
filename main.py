@@ -143,9 +143,21 @@ class FallTemplateBot2026(ForecastBot):
                 or researcher == "asknews/deep-research/medium-depth"
                 or researcher == "asknews/deep-research/high-depth"
             ):
-                research = await AskNewsSearcher().call_preconfigured_version(
-                    researcher, prompt
-                )
+                try:
+                    research = await AskNewsSearcher().call_preconfigured_version(
+                        researcher, prompt
+                    )
+                except Exception as e:
+                    # Deep research needs AskNews chat scope and premium sources;
+                    # fall back to plain news search rather than skip the question.
+                    if researcher == "asknews/news-summaries":
+                        raise
+                    logger.warning(
+                        f"AskNews {researcher} failed for {question.page_url} ({e}); falling back to asknews/news-summaries"
+                    )
+                    research = await AskNewsSearcher().call_preconfigured_version(
+                        "asknews/news-summaries", question.question_text
+                    )
             elif researcher.startswith("smart-searcher"):
                 model_name = researcher.removeprefix("smart-searcher/")
                 searcher = SmartSearcher(
@@ -179,6 +191,9 @@ class FallTemplateBot2026(ForecastBot):
 
             Question:
             {question.question_text}
+
+            Question background:
+            {question.background_info or ""}
 
             This question's outcome will be determined by the specific criteria below:
             {question.resolution_criteria}
@@ -708,8 +723,9 @@ if __name__ == "__main__":
     # budgets, so leave temperature unset and control depth with
     # `output_config` effort (its default is "medium"). Don't use litellm's
     # `reasoning_effort` here: it becomes `budget_tokens`, which Opus 5.5 400s.
-    # "researcher" is left out so forecasting-tools picks one from your env
-    # vars (AskNews/Perplexity/Exa key if set, else the Metaculus proxy).
+    # "researcher" uses AskNews deep research (multi-step search over AskNews,
+    # Google, X, Wiki, podcasts, synthesized by AskNews's default model) and
+    # needs ASKNEWS_CLIENT_ID + ASKNEWS_SECRET.
     def claude_opus(effort: str) -> GeneralLlm:
         return GeneralLlm(
             model="anthropic/claude-opus-5-5",
@@ -731,6 +747,7 @@ if __name__ == "__main__":
             "default": claude_opus("high"),
             "summarizer": claude_opus("low"),
             "parser": claude_opus("low"),
+            "researcher": "asknews/deep-research/medium-depth",
         },
     )
 
