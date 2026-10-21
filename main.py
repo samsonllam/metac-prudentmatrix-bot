@@ -193,23 +193,36 @@ class FallTemplateBot2026(ForecastBot):
         if GeneralLlm.to_model_name(researcher) == "asknews/news-summaries":
             return question.question_text
 
+        today = datetime.now().strftime("%Y-%m-%d")
+        close_date = (
+            question.close_time.strftime("%Y-%m-%d") if question.close_time else "unknown"
+        )
+        resolution_date = (
+            question.scheduled_resolution_time.strftime("%Y-%m-%d")
+            if question.scheduled_resolution_time
+            else "unknown"
+        )
         prompt = clean_indents(
             f"""
-            You are an assistant to a superforecaster.
-            The superforecaster will give you a question they intend to forecast on.
-            To be a great assistant, you generate a concise but detailed rundown of the most relevant news, including if the question would resolve Yes or No based on current information.
-            You do not produce forecasts yourself.
+            You are the research assistant for a superforecaster. They will read your rundown alongside their own judgment, so what helps them most is current, dated facts tied directly to how the question resolves. Do not give a probability or forecast; that call is theirs.
 
-            Question:
-            {question.question_text}
+            Today is {today}. The question closes on {close_date} and resolves on {resolution_date}.
 
-            Question background:
-            {question.background_info or ""}
+            <question>{question.question_text}</question>
+            <background>{question.background_info or ""}</background>
+            <resolution_criteria>{question.resolution_criteria or ""}</resolution_criteria>
+            <fine_print>{question.fine_print or ""}</fine_print>
 
-            This question's outcome will be determined by the specific criteria below:
-            {question.resolution_criteria}
+            Before writing, search broadly with several distinct queries: check the resolution source named in the criteria directly for its latest value or status, look for news from the last 30 days, and look for scheduled events between today and the resolution date.
 
-            {question.fine_print}
+            Write the rundown in these sections:
+            1. Status if resolved today — binary: Yes / No / Unclear; numeric: latest value and its date; multiple choice: which option currently leads. Check it clause by clause against the criteria and fine print, and say what would have to change for a different outcome.
+            2. Key recent developments — 3 to 8 bullets, newest first, each with date and source.
+            3. Upcoming catalysts before {resolution_date} — votes, data releases, deadlines, with dates.
+            4. Reference points — base rates, trends, similar past cases, prediction-market prices if found. Report these as data, not as a forecast.
+            5. Ambiguities and gaps — criteria wording that could be read two ways, conflicting sources, and anything you searched for but could not find.
+
+            Tag any claim not backed by a source you retrieved as [unverified background]. If the newest information you found is more than two weeks old, say so. Keep it under about 600 words.
             """
         )
         return prompt
