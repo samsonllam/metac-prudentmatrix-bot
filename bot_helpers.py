@@ -96,11 +96,13 @@ def print_run_summary_banner(
     forecast_reports: Sequence[Any],
     will_publish: bool,
     tournament_url: str | None = None,
+    skipped: Sequence[str] = (),
 ) -> None:
     """
     End-of-run summary printed via print() (not logger) so it survives log
     filtering. Shows count, per-question URLs, and any failure tracebacks.
-    If tournament_url is given, it's included as a footer link.
+    If tournament_url is given, it's included as a footer link. `skipped`
+    holds one reason per question dropped for being too close to closing.
     """
     # Lazy import so this module is usable in contexts where forecasting_tools
     # isn't installed (e.g. unit tests of the banner format).
@@ -113,7 +115,7 @@ def print_run_summary_banner(
     print()
     print(banner)
 
-    if not forecast_reports:
+    if not forecast_reports and not skipped:
         print("ℹ️   No new questions to forecast on this run.")
         print(banner)
         print()
@@ -126,8 +128,13 @@ def print_run_summary_banner(
         print(
             f"⚠️   Partial — {len(valid)} succeeded, {len(exceptions)} failed."
         )
-    else:
+    elif exceptions:
         print(f"❌  All {len(exceptions)} attempt(s) failed.")
+
+    if skipped:
+        print(f"⏭️   Skipped {len(skipped)} question(s) too close to closing:")
+        for reason in skipped:
+            print(f"  ⏭️  {reason}")
 
     if valid:
         print()

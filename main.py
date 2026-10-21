@@ -1,7 +1,8 @@
 import argparse
 import asyncio
 import logging
-from datetime import datetime, timezone
+from collections.abc import Sequence
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 import dotenv
@@ -43,6 +44,21 @@ from forecasting_tools import (
 
 dotenv.load_dotenv()
 logger = logging.getLogger(__name__)
+
+
+class NotEnoughTimeError(Exception):
+    """The question would close before the forecast could be submitted."""
+
+
+def time_skip_reason(report: object) -> str | None:
+    """The NotEnoughTimeError message if this report is a question skipped for lack of time."""
+    # ForecastBot wraps errors from run_research in (nested) ExceptionGroups.
+    while isinstance(report, BaseExceptionGroup):
+        match, rest = report.split(NotEnoughTimeError)
+        if match is None or rest is not None:
+            return None
+        report = match.exceptions[0]
+    return str(report) if isinstance(report, NotEnoughTimeError) else None
 
 
 class FallTemplateBot2026(ForecastBot):
@@ -125,11 +141,52 @@ class FallTemplateBot2026(ForecastBot):
     )
     _concurrency_limiter = asyncio.Semaphore(_max_concurrent_questions)
     _structure_output_validation_samples = 2
+    # Time each step may take before the question's close_time. Past runs took
+    # 1.5-4 min for deep research and under 1 min for summary + forecast.
+    _submit_margin = timedelta(minutes=2)
+    _research_time_budget = timedelta(minutes=5)
+    _forecast_time_budget = timedelta(minutes=3)
+
+    async def forecast_questions(
+        self,
+        questions: Sequence[MetaculusQuestion],
+        return_exceptions: bool = False,
+    ):
+        # Research runs one question at a time, so put the soonest-closing
+        # questions first rather than behind ones with days left.
+        never = datetime.max.replace(tzinfo=timezone.utc)
+        questions = sorted(questions, key=lambda q: q.close_time or never)
+        return await super().forecast_questions(questions, return_exceptions)
+
+    def _ensure_time_left(
+        self, question: MetaculusQuestion, needed: timedelta, next_step: str
+    ) -> None:
+        if question.close_time is None:
+            return
+        time_left = (
+            question.close_time - datetime.now(timezone.utc) - self._submit_margin
+        )
+        minutes_left = time_left.total_seconds() / 60
+        if time_left < needed:
+            raise NotEnoughTimeError(
+                f"{question.page_url} closes {question.close_time.isoformat(timespec='minutes')}: "
+                f"{minutes_left:.0f} min left, {next_step} needs {needed.total_seconds() / 60:.0f} min"
+            )
+        logger.info(
+            f"{question.page_url}: {minutes_left:.0f} min left before close, going ahead with {next_step}"
+        )
 
     ##################################### RESEARCH #####################################
 
     async def run_research(self, question: MetaculusQuestion) -> str:
         async with self._concurrency_limiter:
+            # Questions queue on the limiter, so only check the clock once it's
+            # this question's turn, and again before the forecast spends more.
+            self._ensure_time_left(
+                question,
+                self._research_time_budget + self._forecast_time_budget,
+                "research + forecast",
+            )
             research = ""
             researcher = self.get_llm("researcher")
 
@@ -184,6 +241,7 @@ class FallTemplateBot2026(ForecastBot):
             else:
                 research = await self.get_llm("researcher", "llm").invoke(prompt)
             logger.info(f"Found Research for URL {question.page_url}:\n{research}")
+            self._ensure_time_left(question, self._forecast_time_budget, "forecast")
             return research
 
     @staticmethod
@@ -844,9 +902,20 @@ if __name__ == "__main__":
             )
         )
 
+    # Questions stopped for lack of time aren't failures: keep them out of
+    # log_report_summary, which would raise and fail the run.
+    skip_reasons = [time_skip_reason(report) for report in forecast_reports]
+    skipped = [reason for reason in skip_reasons if reason]
+    forecast_reports = [
+        report
+        for report, reason in zip(forecast_reports, skip_reasons)
+        if not reason
+    ]
+
     template_bot.log_report_summary(forecast_reports)
     print_run_summary_banner(
         forecast_reports,
         will_publish=publish_to_metaculus,
         tournament_url=TOURNAMENT_URLS.get(run_mode),
+        skipped=skipped,
     )
